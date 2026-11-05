@@ -300,7 +300,7 @@ table.ref th{background:#f4f5fb;font-weight:800}
 .exam-note{font-size:.92rem;color:var(--muted);margin:0 0 10px}
 @media(max-width:1100px){.cats.five{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.cats.five{grid-template-columns:1fr 1fr}.feature-row{grid-template-columns:1fr}.cats.five .cat{min-height:140px}}
-@media(max-width:560px){.choices.grid{grid-template-columns:1fr}.play-head{flex-wrap:nowrap}.play-head .btn{min-height:42px;padding:6px 11px;font-size:.9rem;white-space:nowrap}.play-title{font-size:1.05rem}}
+@media(max-width:560px){.choices.grid{grid-template-columns:1fr 1fr;gap:7px}.choices.grid .choice{padding:6px 4px}.choices.grid .molbox.mini svg{max-width:132px}.play-head{flex-wrap:nowrap}.play-head .btn{min-height:42px;padding:6px 11px;font-size:.9rem;white-space:nowrap}.play-title{font-size:1.05rem}}
 
 .labcard{max-width:560px;margin:0 auto 12px;border:1.5px solid #cfd6ea;border-radius:14px;overflow:hidden;background:#fff}
 .labhead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#eef3fb;font-size:.92rem;color:#3d4a73}
@@ -314,7 +314,7 @@ table.data.lab td.hi{color:#b4233d;font-weight:800}
 .molpair{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:stretch}
 #art{text-align:center}
 svg.fischer{width:200px;max-width:100%}svg.fischer .fl{font:800 17px Nunito,Inter,Helvetica,Arial,sans-serif;fill:#2e2b38}
-.choices.grid .molbox.mini{background:transparent}
+.choices.grid .molbox.mini{background:transparent}.optletter{display:block;font:700 1.15rem var(--font-display);color:var(--accent-d);text-align:center;margin-bottom:2px}
 </style>
 <script src="https://itsdrdan.github.io/games/track.js" defer></script>
 <link rel="stylesheet" href="https://itsdrdan.github.io/games/brand/itsdrdan.css">
@@ -490,7 +490,7 @@ const TERMS = [
   ['Diastereomers', 'stereoisomers that are NOT mirror images of each other'],
   ['Racemic mixture', 'a 50:50 mixture of two enantiomers; it does not rotate plane-polarized light'],
   ['Optically active', 'able to rotate plane-polarized light, as every chiral compound is'],
-  ['Meso compound', 'a molecule with chiral carbons that is still achiral because it has an internal mirror plane'],
+  ['Meso compound', 'a molecule with two or more chiral carbons that is still achiral, because one half of it is the mirror image of the other half; it does not rotate plane-polarized light'],
   ['Fischer projection', 'a flat drawing of a chiral molecule: horizontal lines come toward you, vertical lines go away'],
   ['Epimers', 'diastereomers that differ at only one chiral carbon, such as D-glucose and D-galactose'],
   ['Wedge bond', 'a solid triangle bond that points toward you, out of the page'],
@@ -505,6 +505,14 @@ function genTerms() {
   const conf = TERM_CONFUSE[term]; const others = shuffle(TERMS.filter(t => t[0] !== term && t[0] !== conf)).slice(0, conf ? 2 : 3).map(t => t[0]);
   return mcq({ topic: 'terms', tag: term, prompt: `Which term means: <i>${def}</i>?`, right: term, wrongs: (conf ? [conf] : []).concat(others), solution: `<b>${term}:</b> ${def}.`, hint: 'Match the key idea in the definition to the term.' });
 }
+// true if a letter circle sits on a bond, on another letter, or on an atom label (FBX draws letters as r≈9 circles)
+function labelsCollide(svg) {
+  const num = v => parseFloat(v); const C = [...svg.matchAll(/<circle cx="([\d.-]+)" cy="([\d.-]+)" r="(\d+(?:\.\d+)?)"/g)].map(x => [num(x[1]), num(x[2]), num(x[3])]);
+  const Lz = [...svg.matchAll(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/g)].map(x => x.slice(1, 5).map(num));
+  const T = [...svg.matchAll(/<text x="([\d.-]+)" y="([\d.-]+)"([^>]*)>([^<]+)</g)].filter(x => /[A-Z]/.test(x[4])).map(x => [num(x[1]) + (/anchor="start"/.test(x[3]) ? 11 : /anchor="end"/.test(x[3]) ? -11 : 0), num(x[2]) - 6]);
+  const segD = (px, py, [x1, y1, x2, y2]) => { const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy || 1; const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / L2)); return Math.hypot(px - x1 - t * dx, py - y1 - t * dy); };
+  return C.some(([x, y, r], k) => Lz.some(l => segD(x, y, l) < r + 4.5) || C.some(([x2, y2, r2], j) => j > k && Math.hypot(x - x2, y - y2) < r + r2 + 2) || T.some(([tx, ty]) => Math.abs(tx - x) < r + 15 && Math.abs(ty - y) < r + 10));
+}
 function genFind() {
   for (let t = 0; t < 120; t++) {
     const m = randomChain({ n: rint(5, 7), minChiral: 1, ears: true, endOH: true });
@@ -516,7 +524,8 @@ function genFind() {
     const labs = shuffle(['a', 'b', 'c', 'd']); [right, ...others].forEach((i, k) => m.atoms[i].lab = labs[k]);
     const L = i => m.atoms[i].lab;
     const g = groupsAt(m, right).map(fm).join(', ');
-    return mcq({ topic: 'find', tag: 'which carbon', art: drawMol(m, { alt: 'Skeletal structure with four carbons labeled a, b, c and d' }), prompt: 'Which labeled carbon is a <b>chiral carbon</b>?',
+    const art = drawMol(m, { alt: 'Skeletal structure with four carbons labeled a, b, c and d' }); if (labelsCollide(art)) continue;
+    return mcq({ topic: 'find', tag: 'which carbon', art, prompt: 'Which labeled carbon is a <b>chiral carbon</b>?',
       right: `Carbon ${L(right)}`, wrongs: others.map(i => [`Carbon ${L(i)}`, `Carbon ${L(i)} is not chiral: ${whyNot(m, i)}.`, 'find:' + (whyNot(m, i).startsWith('it has') ? 'two-H' : 'two-same')]),
       keep: ['Carbon a', 'Carbon b', 'Carbon c', 'Carbon d'],
       solution: `Carbon ${L(right)} has four different groups: ${g}. The others each fail the test: ${others.map(i => `${L(i)} (${whyNot(m, i)})`).join('; ')}.`,
@@ -553,14 +562,32 @@ function genCount() {
     keep: ['0', '1', '2', '3', '4'], solution: n ? `${n} chiral carbon${n > 1 ? 's' : ''}: ${list}.` : 'None. Every carbon has two or more H atoms, two identical groups, or a double bond.',
     hint: 'Go carbon by carbon. Skip CH_2 and CH_3 carbons and C=O carbons. For each CH, list the four groups and check that all four are different.' });
 }
+// molecules with two matching halves (meso form exists): [name, n, subs]
+const MESO = [
+  ['2,3-dibromobutane', 4, [{ pos: 1, g: 'Br', slot: 'v' }, { pos: 2, g: 'Br', slot: 'v' }]],
+  ['2,3-dichlorobutane', 4, [{ pos: 1, g: 'Cl', slot: 'v' }, { pos: 2, g: 'Cl', slot: 'v' }]],
+  ['butane-2,3-diol', 4, [{ pos: 1, g: 'OH', slot: 'v' }, { pos: 2, g: 'OH', slot: 'v' }]],
+  ['2,4-dibromopentane', 5, [{ pos: 1, g: 'Br', slot: 'v' }, { pos: 3, g: 'Br', slot: 'v' }]],
+  ['pentane-2,4-diol', 5, [{ pos: 1, g: 'OH', slot: 'v' }, { pos: 3, g: 'OH', slot: 'v' }]],
+  ['3,4-dichlorohexane', 6, [{ pos: 2, g: 'Cl', slot: 'v' }, { pos: 3, g: 'Cl', slot: 'v' }]],
+  ['tartaric acid (found in grapes)', 4, [{ pos: 0, g: '=O', slot: 'v' }, { pos: 0, g: 'OH', slot: 'e' }, { pos: 1, g: 'OH', slot: 'v' }, { pos: 2, g: 'OH', slot: 'v' }, { pos: 3, g: '=O', slot: 'v' }, { pos: 3, g: 'OH', slot: 'e' }]]
+];
+const mesoBag = bag(MESO);
 function genNstereo() {
+  if (chance(0.2)) {
+    const [name, nn, subs] = mesoBag(); const m = chainMol(nn, subs.map(x => Object.assign({}, x))); m.n = nn; m.chiral = chiralOf(m);
+    return mcq({ topic: 'nstereo', tag: 'meso', art: drawMol(m, { alt: 'Skeletal structure of ' + name }), prompt: `This is <b>${name}</b>. Its two halves match. How many <b>stereoisomers</b> does it have?`,
+      right: '3', wrongs: [['4', '2<sup>2</sup> = 4 is the MAXIMUM. Because the two halves match, two of those four drawings are the same molecule (the meso form).', 'nstereo:missed-meso'], ['2', 'There is a pair of enantiomers, but there is also a third, achiral form: the meso compound.', 'nstereo:meso-two'], ['1', 'Two chiral carbons give more than one stereoisomer.', 'nstereo:formula']], keep: ['1', '2', '3', '4'],
+      solution: `There are 2 chiral carbons (${m.chiral.map(i => cname(m, i)).join(' and ')}), so 2<sup>2</sup> = 4 is the most possible. But the two halves of the molecule match, so one arrangement is a <b>meso compound</b>: it has chiral carbons, yet it is its own mirror image (achiral). Total = <b>3</b>: one pair of enantiomers + the meso form.`,
+      hint: '2<sup>n</sup> is the maximum. When the two halves of a molecule are the same, one stereoisomer is meso (its own mirror image), so you get one fewer.' });
+  }
   const m = randomChain({ n: rint(5, 7), minChiral: 1, maxChiral: 3, noMeso: true });
   const n = m.chiral.length, right = String(2 ** n);
   const wr = [...new Set([String(n), String(2 * n), String(n * n), String(2 ** n + 2), '1'])].filter(x => x !== right).slice(0, 3);
-  return mcq({ topic: 'nstereo', tag: `${n} chiral C`, art: drawMol(m, { alt: 'Skeletal structure' }), prompt: 'How many <b>stereoisomers</b> are possible for this molecule? (It is not a meso compound.)',
+  return mcq({ topic: 'nstereo', tag: `${n} chiral C`, art: drawMol(m, { alt: 'Skeletal structure' }), prompt: 'How many <b>stereoisomers</b> are possible for this molecule?',
     right, wrongs: wr.map(x => [x, x === String(n) ? 'That is the number of chiral carbons, not the number of stereoisomers.' : x === String(2 * n) ? 'Each chiral carbon doubles the count; it does not just add 2.' : 'Use 2 to the power of the number of chiral carbons.', x === String(n) ? 'nstereo:n-not-2n' : 'nstereo:formula']),
-    solution: `This molecule has ${n} chiral carbon${n > 1 ? 's' : ''} (${m.chiral.map(i => cname(m, i)).join(', ')}), so the maximum number of stereoisomers is 2^${n} = ${2 ** n}.`.replace(/\^(\d)/, '<sup>$1</sup>'),
-    hint: 'Count the chiral carbons (n). The maximum number of stereoisomers is 2<sup>n</sup>.' });
+    solution: `This molecule has ${n} chiral carbon${n > 1 ? 's' : ''} (${m.chiral.map(i => cname(m, i)).join(', ')}), so the number of stereoisomers is 2^${n} = ${2 ** n}.${n > 1 ? ' Its two halves do not match, so there is no meso form to subtract.' : ''}`.replace(/\^(\d)/, '<sup>$1</sup>'),
+    hint: 'Count the chiral carbons (n). The number of stereoisomers is 2<sup>n</sup> (one fewer only if the molecule has two matching halves and a meso form).' });
 }
 
 /* ===================== 2. Isomer relationships ===================== */
@@ -571,12 +598,12 @@ function genRelate() {
   const kk = m.chiral.length; const A = m.chiral.map(() => (chance(0.5) ? 1 : -1));
   let target = kk === 1 ? pick(['id', 'en']) : pick(['id', 'en', 'di', 'di']);
   let Bp = A.slice(); if (target === 'en') Bp = A.map(s => -s); if (target === 'di') { const flip = shuffle([...A.keys()]).slice(0, rint(1, kk - 1)); flip.forEach(f => Bp[f] = -Bp[f]); }
-  const mode = pick(['none', 'none', 'mirror', 'rotate']);
+  const mode = target === 'id' ? pick(['mirror', 'rotate']) : pick(['none', 'none', 'mirror', 'rotate']);
   const drawn = Bp.map(s => s * (mode === 'mirror' ? -1 : 1));
   const I = stereoVersion(m, A), II = transform(stereoVersion(m, drawn), mode);
   const inv = Bp.filter((s, i) => s !== A[i]).length;
   const right = { id: RELS[0], en: RELS[1], di: RELS[2] }[target];
-  const modeNote = mode === 'mirror' ? ' II is drawn flipped left to right with the same wedges, and that flip by itself reverses every chiral carbon.' : mode === 'rotate' ? ' II is the same drawing turned 180° in the plane of the page; turning a drawing in the plane never changes a chiral carbon.' : '';
+  const modeNote = mode === 'mirror' ? ' II is drawn flipped over (turned 180° out of the page): the chain runs the other way AND every wedge became a dash and every dash a wedge. Those two changes cancel, so compare carefully: flipping a molecule over never changes it.' : mode === 'rotate' ? ' II is the same drawing turned 180° in the plane of the page; turning a drawing in the plane never changes a chiral carbon.' : '';
   return mcq({ topic: 'relate', tag: kk + ' chiral C', art: pair(drawMol(I, { cap: 'I', alt: 'Molecule I with wedge and dash bonds' }), drawMol(II, { cap: 'II', alt: 'Molecule II with wedge and dash bonds' })),
     prompt: 'Molecules I and II are drawn with wedge and dash bonds. How are they related?', right,
     wrongs: RELS.filter(r => r !== right).map(r => [r, r === RELS[3] ? 'The atoms are connected in the same order in I and II, so they are not constitutional isomers.' : r === RELS[1] ? 'Enantiomers have EVERY chiral carbon reversed.' : r === RELS[2] ? 'Diastereomers have some, but not all, chiral carbons reversed.' : 'Identical molecules have every chiral carbon the same.', 'relate:' + slug(r)]),
@@ -631,7 +658,7 @@ function ringMol(size, p2, g1, g2, s1, s2) { // substituents on ring atom 0 and 
   const m = { atoms: [], bonds: [] }; const R = BL / (2 * Math.sin(Math.PI / size));
   for (let i = 0; i < size; i++) { const a = -Math.PI / 2 + 2 * Math.PI * i / size; m.atoms.push({ t: 'C', x: R * Math.cos(a), y: R * Math.sin(a), lab: '' }); if (i) m.bonds.push([i - 1, i, 1]); }
   m.bonds.push([size - 1, 0, 1]);
-  [[0, g1, s1], [p2, g2, s2]].forEach(([i, g, st]) => { const a = -Math.PI / 2 + 2 * Math.PI * i / size; m.atoms.push({ t: g === 'CH3' ? 'C' : g, x: (R + BL) * Math.cos(a), y: (R + BL) * Math.sin(a), lab: '' }); m.bonds.push([i, m.atoms.length - 1, st]); });
+  [[0, g1, s1], [p2, g2, s2]].forEach(([i, g, st]) => { const a = -Math.PI / 2 + 2 * Math.PI * i / size; const out = g !== 'CH3' && Math.abs(Math.cos(a)) > 0.3 ? BL * 1.22 : BL; m.atoms.push({ t: g === 'CH3' ? 'C' : g, x: (R + out) * Math.cos(a), y: (R + out) * Math.sin(a), lab: '' }); m.bonds.push([i, m.atoms.length - 1, st]); });
   return m;
 }
 function genRingCT() {
@@ -653,7 +680,8 @@ const SUGARS = {
   'glyceraldehyde': { top: 'CHO', p: 'R' }, 'erythrose': { top: 'CHO', p: 'RR' }, 'threose': { top: 'CHO', p: 'LR' },
   'ribose': { top: 'CHO', p: 'RRR' }, 'arabinose': { top: 'CHO', p: 'LRR' }, 'xylose': { top: 'CHO', p: 'RLR' },
   'glucose': { top: 'CHO', p: 'RLRR' }, 'mannose': { top: 'CHO', p: 'LLRR' }, 'galactose': { top: 'CHO', p: 'RLLR' }, 'allose': { top: 'CHO', p: 'RRRR' },
-  'fructose': { top: 'CH2OH', second: 'C=O', p: 'LRR' }
+  'fructose': { top: 'CH2OH', second: 'C=O', p: 'LRR' }, 'psicose': { top: 'CH2OH', second: 'C=O', p: 'RRR' }, 'tagatose': { top: 'CH2OH', second: 'C=O', p: 'LLR' },
+  'ribulose': { top: 'CH2OH', second: 'C=O', p: 'RR' }, 'xylulose': { top: 'CH2OH', second: 'C=O', p: 'LR' }
 };
 const flipP = p => p.split('').map(c => (c === 'R' ? 'L' : 'R')).join('');
 function fischerSVG(top, rows, bottom, opts = {}) { // rows: [[left, right], ...]
@@ -673,10 +701,15 @@ function fischerSVG(top, rows, bottom, opts = {}) { // rows: [[left, right], ...
   } else s += L(cx, lineTop, cx, lineEnd);
   let y = first - gap;
   if (opts.second) y += gap;
-  rows.forEach(([l, r]) => { y += gap; s += `<line x1="${cx - 44}" y1="${y}" x2="${cx + 44}" y2="${y}" stroke="#2e2b38" stroke-width="2.6"/><text x="${cx - 50}" y="${y + 5}" text-anchor="end" class="fl">${SUB(l)}</text><text x="${cx + 50}" y="${y + 5}" text-anchor="start" class="fl">${SUB(r)}</text>`; });
+  rows.forEach(([l, r]) => { y += gap; s += `<line x1="${cx - 44}" y1="${y}" x2="${cx + 44}" y2="${y}" stroke="#2e2b38" stroke-width="2.6"/><text x="${cx - 47}" y="${y + 5}" text-anchor="end" class="fl">${SUB(l)}</text><text x="${cx + 47}" y="${y + 5}" text-anchor="start" class="fl">${SUB(r)}</text>`; });
   s += cLabel(bottom, lineEnd + 20);
   return `<svg class="dgm fischer" viewBox="0 0 ${W} ${lineEnd + 28}" role="img" aria-label="${opts.alt || 'Fischer projection'}">${s}</svg>`;
 }
+// pattern p (R/L per chiral carbon, top to bottom); rot = drawn turned 180° in the plane (CH2OH on top, sides swapped)
+function patFischer(S, p, opts = {}) { let rows = p.split('').map(c => (c === 'R' ? ['H', 'OH'] : ['HO', 'H'])); let top = S.top, bot = 'CH2OH';
+  if (opts.rot) { rows = rows.reverse().map(([l, r]) => [r === 'OH' ? 'HO' : r, l === 'HO' ? 'OH' : l]); [top, bot] = [bot, top]; }
+  const ket = !!S.second && !opts.rot; // a rotated ketose would put C=O second from the bottom; only aldoses are rotated
+  return fischerSVG(top, rows, bot, { second: ket, alt: opts.alt || `Fischer projection: ${top} at the top${opts.rot ? ' (drawn turned 180 degrees)' : ''}, OH on the ${rows.map(r => (r[1] === 'OH' ? 'right' : 'left')).join(', ')}, ${bot} at the bottom` }); }
 function sugarFischer(name, D = true, cap) { const S = SUGARS[name]; const p = D ? S.p : flipP(S.p); const rows = p.split('').map(c => (c === 'R' ? ['H', 'OH'] : ['HO', 'H']));
   const alt = `Fischer projection: ${S.top} at the top${S.second ? ', C=O second' : ''}, then OH on the ${p.split('').map(c => (c === 'R' ? 'right' : 'left')).join(', ')}, CH2OH at the bottom`;
   const svg = fischerSVG(S.top, rows, 'CH2OH', { second: !!S.second, alt }); return `<div class="molbox">${svg}${cap ? `<div class="molcap">${cap}</div>` : ''}</div>`; }
@@ -695,33 +728,38 @@ function genAA() {
     wrongs: [['L', 'Its α-carbon has two H atoms (one on the side, one at the bottom), so it is not chiral.', 'aa:glycine'], ['D', 'Its α-carbon has two H atoms, so it is not chiral.', 'aa:glycine']], solution: 'Glycine’s R group is H, so its α-carbon has two identical groups. It is the only common amino acid with no D or L form.', hint: 'Look at the R group at the bottom.' });
   const name = pick(Object.keys(AAS)); const L = chance(0.5); const right = L ? 'L' : 'D';
   return mcq({ topic: 'aa', tag: name, art: aaFischer(name, L), prompt: `This is ${name}. Is it the <b>D</b> or the <b>L</b> form?`, right,
-    wrongs: [[L ? 'D' : 'L', 'With COOH at the top and the R group at the bottom, NH_2 on the LEFT = L.', 'aa:swap'], ['Neither: amino acids are not D or L', `${name[0].toUpperCase() + name.slice(1)} has a chiral α-carbon, so it has D and L forms.`, 'aa:neither']], keep: ['D', 'L', 'Neither: amino acids are not D or L'],
+    wrongs: [[L ? 'D' : 'L', 'With COOH at the top and the R group at the bottom, NH_2 on the LEFT = L.', 'aa:swap'], ['Can’t tell without knowing the R group', `You don’t need to know the R group: with COOH up and the R group down, only the side the NH_2 is on decides D or L.`, 'aa:need-r']], keep: ['D', 'L', 'Can’t tell without knowing the R group'],
     solution: `COOH is on top and the R group (${fm(AAS[name].replace(/(\d)/g, '_$1'))}) is at the bottom; NH_2 is on the <b>${L ? 'left' : 'right'}</b>, so this is <b>${right}-${name}</b>. ${L ? 'This is the form found in human proteins.' : 'Human proteins use the L form, so this one is not found in our proteins.'}`,
     hint: 'COOH up, R group down. NH_2 on the Left = L (the form in your proteins); on the Right = D.' });
 }
-const ALDOSE4 = ['glucose', 'mannose', 'galactose', 'allose'], ALDOSE3 = ['ribose', 'arabinose', 'xylose'];
+const ALDOSE4 = ['glucose', 'mannose', 'galactose', 'allose'], ALDOSE3 = ['ribose', 'arabinose', 'xylose'], KETOSE6 = ['fructose', 'psicose', 'tagatose'], KETOSE5 = ['ribulose', 'xylulose'];
 function genFischRel() {
-  const set = pick([ALDOSE4, ALDOSE4, ALDOSE3]); const a = pick(set); const aD = chance(0.7);
+  const set = pick([ALDOSE4, ALDOSE4, ALDOSE3, KETOSE6, KETOSE5]); const a = pick(set); const aD = chance(0.7);
   const target = pick(['en', 'di', 'di', 'id']); let b = a, bD = aD;
   if (target === 'en') bD = !aD; if (target === 'di') { b = pick(set.filter(x => x !== a)); bD = aD; }
   const nm = (n, d) => `${d ? 'D' : 'L'}-${n}`;
   const pa = aD ? SUGARS[a].p : flipP(SUGARS[a].p), pb = bD ? SUGARS[b].p : flipP(SUGARS[b].p); const diff = [...pa].filter((c, i) => c !== pb[i]).length;
+  // identical pairs are never the same picture: II is turned 180° in the page (aldoses only); other answers sometimes get the same twist
+  const aldose = !SUGARS[a].second; const rot = aldose && (target === 'id' || chance(0.25));
+  if (target === 'id' && !aldose) return genFischRel();
+  const II = `<div class="molbox">${patFischer(SUGARS[b], pb, { rot })}<div class="molcap">II</div></div>`;
   const R = { id: RELS[0], en: RELS[1], di: RELS[2] }[target];
-  return mcq({ topic: 'fischrel', tag: `${nm(a, aD)} vs ${nm(b, bD)}`, art: pair(sugarFischer(a, aD, 'I'), sugarFischer(b, bD, 'II')), prompt: 'How are sugars I and II related?', right: R,
+  const rotNote = rot ? ' II is drawn turned 180° in the page (CH_2OH on top). Turning a Fischer projection 180° is allowed and does not change the molecule, so turn it back (CHO on top) before you compare.' : '';
+  return mcq({ topic: 'fischrel', tag: `${nm(a, aD)} vs ${nm(b, bD)}`, art: pair(sugarFischer(a, aD, 'I'), II), prompt: 'How are sugars I and II related?', right: R,
     wrongs: RELS.filter(r => r !== R).map(r => [r, r === RELS[3] ? 'Both have the same formula and the same carbon chain; only the OH positions differ.' : r === RELS[1] ? 'Enantiomers have EVERY OH on the opposite side.' : r === RELS[2] ? 'Diastereomers differ at some, but not all, chiral carbons.' : 'Identical sugars have every OH on the same side.', 'fischrel:' + slug(r)]), keep: RELS,
-    solution: `I is ${nm(a, aD)} and II is ${nm(b, bD)}. ${diff === 0 ? 'Every OH is on the same side: identical.' : diff === pa.length ? 'Every OH is on the opposite side: mirror images, enantiomers.' : `${diff} of ${pa.length} chiral carbons differ: diastereomers${diff === 1 ? ' (epimers, since they differ at only one carbon)' : ''}.`}`,
-    hint: 'Compare the OH sides row by row: all opposite = enantiomers; some = diastereomers; none = identical.' });
+    solution: `I is ${nm(a, aD)} and II is ${nm(b, bD)}.${rotNote} ${diff === 0 ? 'Every OH is on the same side: identical.' : diff === pa.length ? 'Every OH is on the opposite side: mirror images, enantiomers.' : `${diff} of ${pa.length} chiral carbons differ: diastereomers${diff === 1 ? ' (epimers, since they differ at only one carbon)' : ''}.`}`,
+    hint: rot ? 'One drawing is upside down. Turn it 180° in your head (CHO back on top, every group swaps sides), then compare the OH sides row by row.' : 'Compare the OH sides row by row: all opposite = enantiomers; some = diastereomers; none = identical.' });
 }
 function genMirror() {
-  const name = pick(['glucose', 'galactose', 'mannose', 'ribose']); const p = SUGARS[name].p;
+  const name = pick(['glucose', 'galactose', 'mannose', 'ribose', 'fructose', 'tagatose']); const S = SUGARS[name], p = S.p;
   const optsP = { all: flipP(p), last: p.slice(0, -1) + flipP(p.slice(-1)), first: flipP(p[0]) + p.slice(1), same: p };
-  const draw = q => { const rows = q.split('').map(c => (c === 'R' ? ['H', 'OH'] : ['HO', 'H'])); return `<div class="molbox mini">${fischerSVG('CHO', rows, 'CH2OH', { alt: 'Fischer projection, OH on the ' + q.split('').map(c => (c === 'R' ? 'right' : 'left')).join(', ') })}</div>`; };
-  const KEYS = { all: 'A', last: 'B', first: 'C', same: 'D' }; const order = shuffle(['all', 'last', 'first', 'same']);
-  const html = t => draw(optsP[order[['A', 'B', 'C', 'D'].indexOf(t)]]);
+  const draw = q => `<div class="molbox mini">${patFischer(S, q)}</div>`;
+  const order = shuffle(['all', 'last', 'first', 'same']);
+  const html = t => `<b class="optletter">${t}</b>${draw(optsP[order[['A', 'B', 'C', 'D'].indexOf(t)]])}`;
   const letter = k => ['A', 'B', 'C', 'D'][order.indexOf(k)];
   return mcq({ topic: 'mirror', tag: name, art: sugarFischer(name, true, `D-${name}`), prompt: `Which Fischer projection is the <b>enantiomer</b> of D-${name}?`, right: letter('all'), html, grid: true,
     wrongs: [[letter('last'), 'Only the bottom OH is flipped: that changes D to L but is a diastereomer, not the mirror image.', 'mirror:only-last'], [letter('first'), 'Only one OH is flipped: an epimer (diastereomer).', 'mirror:one'], [letter('same'), 'That is the same molecule.', 'mirror:same']],
-    keep: ['A', 'B', 'C', 'D'], solution: `The enantiomer (L-${name}) has <b>every</b> OH on the opposite side. Flipping only the bottom OH gives a different sugar, a diastereomer.`, hint: 'A mirror image flips EVERY chiral carbon, not just the one that decides D or L.' });
+    keep: ['A', 'B', 'C', 'D'], solution: `The enantiomer (L-${name}) has <b>every</b> OH on the opposite side${S.second ? '; the C=O and the CH_2OH groups stay where they are' : ''}. Flipping only the bottom OH gives a different sugar, a diastereomer.`, hint: 'A mirror image flips EVERY chiral carbon, not just the one that decides D or L.' });
 }
 
 /* ===================== 5. Health & clinic ===================== */
@@ -1103,8 +1141,9 @@ function renderRules() {
    <tr><td>Same connections, every chiral carbon reversed (mirror images)</td><td><b>Enantiomers</b></td></tr>
    <tr><td>Same connections, some but not all reversed</td><td><b>Diastereomers</b> (differ at one carbon: epimers)</td></tr></tbody></table></div>
    <div class="rule"><h3>Cis and trans</h3><p>Needs two <b>different</b> groups on <b>each</b> C=C carbon. Same side = <b>cis</b>; opposite sides = <b>trans</b>.</p><p>Rings: wedge + wedge or dash + dash = cis; wedge + dash = trans.</p></div>
-   <div class="rule"><h3>Fischer projections</h3><p>Horizontal lines come toward you; vertical lines go away. Never turn a Fischer projection 90°.</p><p><b>Sugars:</b> the OH on the chiral carbon farthest from C=O: Right = <b>D</b>, Left = <b>L</b>. <b>Amino acids</b> (COOH up, R down): NH<sub>2</sub> on the Left = <b>L</b>.</p></div>
-   <div class="rule"><h3>In the body</h3><p>Natural sugars are <b>D</b>; proteins use <b>L</b>-amino acids. Enzymes and receptors are chiral, so enantiomers of a drug can act very differently. Racemic = 50:50, no net rotation of polarized light.</p></div></div>`;
+   <div class="rule"><h3>Fischer projections</h3><p>Horizontal lines come toward you; vertical lines go away. Never turn a Fischer projection 90°. Turning it 180° in the page is fine (it is the same molecule).</p><p><b>Sugars:</b> the OH on the chiral carbon farthest from C=O: Right = <b>D</b>, Left = <b>L</b>. <b>Amino acids</b> (COOH up, R down): NH<sub>2</sub> on the Left = <b>L</b>.</p></div>
+   <div class="rule"><h3>In the body</h3><p>Natural sugars are <b>D</b>; proteins use <b>L</b>-amino acids. Enzymes and receptors are chiral, so enantiomers of a drug can act very differently. Racemic = 50:50, no net rotation of polarized light.</p></div>
+   <div class="rule wide"><h3>Meso compound (not the same as racemic!)</h3><p>A <b>meso compound</b> has two or more chiral carbons but is still <b>achiral</b>: its two halves are mirror images of each other, so the whole molecule is its own mirror image. Example: 2,3-dibromobutane with one Br on a wedge and one on a dash.</p><p>Because of that, a molecule with two matching halves has <b>fewer</b> than 2<sup>n</sup> stereoisomers: 2,3-dibromobutane has 3 (a pair of enantiomers plus the meso form), not 4.</p><p><b>Racemic mixture</b> = a 50:50 MIXTURE of two different molecules (enantiomers). <b>Meso</b> = ONE molecule. Neither rotates plane-polarized light.</p></div></div>`;
 }
 
 /* ---------- wiring ---------- */
