@@ -1,6 +1,6 @@
 # Mirror Match: art
 
-**Status:** none yet. Until an image exists, the game shows a stand-in (a drawn Mira, or a brand-kit badge). Drop a file in with the exact name below and the game uses it automatically. No code changes needed.
+**Status:** done (Nov 2026). All 25 images are in `assets/` (mascot 320 × 320, badges and logo 256 × 256, transparent WebP), cut from the ChatGPT art package. To replace one, drop in a file with the same name; no code changes needed.
 
 Use the brand prompt from itsdrdan.github.io/games/brand and change only the Subject line. Glossy cartoon style, transparent background, no text.
 
