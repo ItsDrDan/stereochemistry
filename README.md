@@ -8,4 +8,4 @@ Study game for CHEM 3B stereochemistry: textbook Sections 3.2 (cis–trans), 5.5
 - `ASSETS.md`: the art list (mascot Mira, logo, badges). Stand-ins show until the files exist.
 - Links: `?topic=find,relate` opens topics directly; `?mode=exam` opens Exam Practice.
 
-Game design and chemistry by ItsDrDan. Code written with AI assistance (Claude) and checked by the author. CC BY-NC-SA 4.0.
+Game design and chemistry by ItsDrDan. Code written with AI assistance (Claude) and checked by the author. © ItsDrDan, all rights reserved; free to play, reuse by permission only (see LICENSE).
